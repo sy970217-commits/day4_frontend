@@ -64,14 +64,25 @@ async function getJson(url, params) {
 }
 const asArray = (x) => (Array.isArray(x) ? x : [x]); // 다중 좌표 조회는 배열, 단일은 객체
 
+// 1순위: Vercel 서버 프록시(/api/weather, 10분 공용 캐시) -> 실패 시(로컬 정적 서버 등) Open-Meteo 직접 호출
+const DIRECT = { forecast: WX_URL, air: AQ_URL };
+async function om(src, params) {
+  try {
+    return await getJson("/api/weather", { ...params, src });
+  } catch {
+    return getJson(DIRECT[src], params);
+  }
+}
+
 async function fetchAt(points, wxCurrent, aqCurrent) {
-  const lat = points.map((p) => p.lat).join(",");
-  const lon = points.map((p) => p.lon).join(",");
+  // 소수 둘째 자리로 맞춰, 같은 지점은 모든 사용자가 같은 URL(=같은 CDN 캐시)을 쓰게 한다
+  const lat = points.map((p) => p.lat.toFixed(2)).join(",");
+  const lon = points.map((p) => p.lon.toFixed(2)).join(",");
   const base = { latitude: lat, longitude: lon, timezone: "auto" };
   // 날씨와 대기질은 독립적으로 조회 (한쪽이 실패해도 다른 쪽은 표시)
   const [wx, aq] = await Promise.allSettled([
-    getJson(WX_URL, { ...base, current: wxCurrent }),
-    getJson(AQ_URL, { ...base, current: aqCurrent }),
+    om("forecast", { ...base, current: wxCurrent }),
+    om("air", { ...base, current: aqCurrent }),
   ]);
   if (wx.status === "rejected") throw wx.reason;
   return {
