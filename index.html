@@ -8,8 +8,9 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three": "./vendor/three.module.js",
+      "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js",
+      "three/addons/renderers/CSS2DRenderer.js": "./vendor/CSS2DRenderer.js"
     }
   }
   </script>
@@ -71,6 +72,14 @@
     </p>
   </main>
   <script src="regions.js"></script>
-  <script type="module" src="app.js"></script>
+  <script type="module">
+    // 모듈 로딩 자체가 실패해도 이유를 화면에 보여준다
+    import("./app.js").catch((e) => {
+      console.error(e);
+      const s = document.getElementById("status");
+      s.className = "status error";
+      s.textContent = `앱을 불러오지 못했습니다: ${e.message}`;
+    });
+  </script>
 </body>
 </html>

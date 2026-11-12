@@ -96,8 +96,22 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 500);
 camera.position.set(0, 58, 56);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// WebGL을 쓸 수 없는 환경(하드웨어 가속 꺼짐 등)에서도 날씨 패널·검색은 동작하도록 대체 객체를 둔다
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+} catch (err) {
+  console.error("WebGL 초기화 실패:", err);
+  renderer = {
+    domElement: document.createElement("canvas"),
+    setSize() {}, render() {}, setAnimationLoop() {},
+  };
+  const msg = document.createElement("div");
+  msg.className = "gl-error";
+  msg.textContent = "3D 지도를 표시할 수 없습니다. 브라우저의 하드웨어 가속(WebGL)을 켜 주세요. 날씨 정보는 검색으로 확인할 수 있습니다.";
+  container.append(msg);
+}
 container.append(renderer.domElement);
 
 const labelRenderer = new CSS2DRenderer();
