@@ -250,15 +250,18 @@ async function kakaoSearch(place, category, kw, radiusKm, limit) {
   if (query) { params.set("query", query); url = "https://dapi.kakao.com/v2/local/search/keyword.json"; }
   else { url = "https://dapi.kakao.com/v2/local/search/category.json"; }
 
-  let data;
-  try {
-    data = await getJson(`${url}?${params}`, { headers: { Authorization: `KakaoAK ${key}` } }, 8000);
-  } catch (e) {
-    if (e.status === 401 || e.status === 403) {
-      e.message = `카카오 API 인증 실패(HTTP ${e.status}): REST API 키와 앱의 카카오맵(로컬) 사용 설정을 확인하세요`;
-    }
+  // 에러 본문(카카오가 준 사유)을 로그에 남기기 위해 getJson 대신 직접 fetch한다
+  const res = await fetch(`${url}?${params}`, {
+    headers: { Authorization: `KakaoAK ${key}`, "User-Agent": UA },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const e = new Error(`카카오 API 오류 HTTP ${res.status}: ${body.message ?? body.errorType ?? "사유 없음"}`);
+    e.status = res.status;
     throw e;
   }
+  const data = await res.json();
   return (data.documents ?? []).map((d, i) => ({
     name: d.place_name,
     lat: Number(d.y),
