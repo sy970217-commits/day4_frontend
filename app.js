@@ -80,7 +80,11 @@ async function fetchAt(points, wxCurrent, aqCurrent) {
     getJson(AQ_URL, { ...base, current: aqCurrent }),
   ]);
   if (wx.status === "rejected") throw wx.reason;
-  return { wx: asArray(wx.value), aq: aq.status === "fulfilled" ? asArray(aq.value) : null };
+  return {
+    wx: asArray(wx.value),
+    aq: aq.status === "fulfilled" ? asArray(aq.value) : null,
+    aqError: aq.status === "rejected" ? aq.reason.message : null,
+  };
 }
 
 // ---------- 좌표 변환 (위경도 <-> 3D 월드) ----------
@@ -302,7 +306,7 @@ async function loadDetail() {
   status.textContent = "불러오는 중...";
   status.className = "status";
   try {
-    const { wx, aq } = await fetchAt([current], WX_CURRENT, "pm10,pm2_5");
+    const { wx, aq, aqError } = await fetchAt([current], WX_CURRENT, "pm10,pm2_5");
     const c = wx[0].current, u = wx[0].current_units;
     const [icon, desc] = wmo(c.weather_code);
 
@@ -321,7 +325,10 @@ async function loadDetail() {
     setDust("pm10", a?.pm10 ?? null);
     setDust("pm25", a?.pm2_5 ?? null);
 
-    status.textContent = aq ? "" : "미세먼지 정보를 가져오지 못했습니다.";
+    status.textContent = aq ? ""
+      : aqError?.includes("429")
+        ? "미세먼지 API 요청 한도를 초과했습니다. 다음 정시 이후 다시 시도해 주세요."
+        : "미세먼지 정보를 가져오지 못했습니다.";
     $("weather").hidden = false;
   } catch (err) {
     status.textContent = `날씨 정보를 가져오지 못했습니다: ${err.message}`;
