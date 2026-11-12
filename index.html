@@ -3,14 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>한국 날씨·미세먼지 지도</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <title>한국 날씨·미세먼지 3D 지도</title>
   <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
   <main class="app">
     <header>
-      <h1>한국 날씨 · 미세먼지 지도</h1>
+      <h1>한국 날씨 · 미세먼지 3D 지도</h1>
       <div class="search">
         <input id="search" type="text" placeholder="지역 검색 (예: 서, 부, 강릉, Busan)"
                autocomplete="off" role="combobox" aria-expanded="false" aria-controls="suggestions" />
@@ -19,7 +26,16 @@
     </header>
 
     <div class="layout">
-      <div id="map" aria-label="한국 지도"></div>
+      <div class="map-wrap">
+        <div id="map" aria-label="한국 3D 지도"></div>
+        <div class="legend">
+          <b>미세먼지 등급</b>
+          <div><i style="background:#1e88e5"></i>좋음 <i style="background:#2e9e5b"></i>보통</div>
+          <div><i style="background:#f59e0b"></i>나쁨 <i style="background:#d32f2f"></i>매우나쁨</div>
+          <small>막대 높이 = PM10</small>
+        </div>
+        <div class="hint">드래그 회전 · 우클릭 이동 · 휠 확대</div>
+      </div>
 
       <aside class="card">
         <section id="status" class="status" aria-live="polite">지도를 클릭하거나 지역을 검색하세요.</section>
@@ -50,11 +66,11 @@
     <p class="credit">
       날씨·대기질: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
       (미세먼지는 CAMS 모델 기반 예측값이며 실측값과 다를 수 있습니다) ·
-      지도: Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>
+      행정구역: <a href="https://github.com/southkorea/southkorea-maps" target="_blank" rel="noopener">southkorea-maps</a> (통계청 2013) ·
+      3D: <a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a>
     </p>
   </main>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="regions.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

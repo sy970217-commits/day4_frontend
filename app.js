@@ -1,4 +1,9 @@
-// 지도 + 실시간 날씨 + 미세먼지 (Open-Meteo, API 키 불필요)
+// three.js 3D 지도 + 실시간 날씨 + 미세먼지 (Open-Meteo, API 키 불필요)
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+// REGIONS 는 regions.js(일반 스크립트)에서 전역으로 제공된다.
+
 const WX_URL = "https://api.open-meteo.com/v1/forecast";
 const AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality";
 const WX_CURRENT = "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m";
@@ -19,17 +24,16 @@ const wmo = (code) => WMO[code] ?? ["❓", "알 수 없음"];
 
 // 한국 환경부 기준 (㎍/㎥) -> 1 좋음, 2 보통, 3 나쁨, 4 매우나쁨
 const GRADE_TEXT = { 0: "정보없음", 1: "좋음", 2: "보통", 3: "나쁨", 4: "매우나쁨" };
+const GRADE_COLOR = { 0: 0x9aa7b4, 1: 0x1e88e5, 2: 0x2e9e5b, 3: 0xf59e0b, 4: 0xd32f2f };
 function grade(kind, v) {
   if (v == null || Number.isNaN(v)) return 0;
   const cut = kind === "pm10" ? [30, 80, 150] : [15, 35, 75];
   return v <= cut[0] ? 1 : v <= cut[1] ? 2 : v <= cut[2] ? 3 : 4;
 }
-const worst = (a, b) => Math.max(a, b);
 
 const $ = (id) => document.getElementById(id);
 const num = (v) => (v == null ? null : Math.round(v));
 
-// 지도에 항상 표시할 대표 도시
 const MAIN_CITIES = ["서울", "인천", "수원", "춘천", "강릉", "청주", "세종", "대전", "전주", "광주", "목포",
   "안동", "대구", "포항", "울산", "부산", "창원", "제주"]
   .map((ko) => REGIONS.find((r) => r[0] === ko))
@@ -38,81 +42,223 @@ const MAIN_CITIES = ["서울", "인천", "수원", "춘천", "강릉", "청주",
 let current = { ko: "서울", en: "Seoul", lat: 37.5665, lon: 126.978 };
 
 // ---------- API ----------
+// 같은 요청은 10분간 localStorage 캐시를 재사용해 Open-Meteo 호출량(429)을 줄인다.
+const CACHE_MS = 10 * 60 * 1000;
 async function getJson(url, params) {
-  const res = await fetch(`${url}?${new URLSearchParams(params)}`);
+  const full = `${url}?${new URLSearchParams(params)}`;
+  const key = `om:${full}`;
+  try {
+    const hit = JSON.parse(localStorage.getItem(key));
+    if (hit && Date.now() - hit.t < CACHE_MS) return hit.v;
+  } catch { /* 캐시 사용 불가 시 무시 */ }
+  const res = await fetch(full);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const v = await res.json();
+  try {
+    // 오래된 캐시 정리 후 저장
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k?.startsWith("om:") && k !== key) {
+        const o = JSON.parse(localStorage.getItem(k) ?? "null");
+        if (!o || Date.now() - o.t > CACHE_MS) localStorage.removeItem(k);
+      }
+    }
+    localStorage.setItem(key, JSON.stringify({ t: Date.now(), v }));
+  } catch { /* 용량 초과 등은 무시 */ }
+  return v;
 }
-const asArray = (x) => (Array.isArray(x) ? x : [x]); // 다중 좌표 조회는 배열, 단일은 객체
+const asArray = (x) => (Array.isArray(x) ? x : [x]);
 
 async function fetchAt(points, wxCurrent, aqCurrent) {
-  const lat = points.map((p) => p.lat).join(",");
-  const lon = points.map((p) => p.lon).join(",");
-  const base = { latitude: lat, longitude: lon, timezone: "auto" };
-  // 날씨와 대기질은 독립적으로 조회 (한쪽이 실패해도 다른 쪽은 표시)
+  const base = {
+    latitude: points.map((p) => p.lat).join(","),
+    longitude: points.map((p) => p.lon).join(","),
+    timezone: "auto",
+  };
   const [wx, aq] = await Promise.allSettled([
     getJson(WX_URL, { ...base, current: wxCurrent }),
     getJson(AQ_URL, { ...base, current: aqCurrent }),
   ]);
   if (wx.status === "rejected") throw wx.reason;
-  return {
-    wx: asArray(wx.value),
-    aq: aq.status === "fulfilled" ? asArray(aq.value) : null,
-  };
+  return { wx: asArray(wx.value), aq: aq.status === "fulfilled" ? asArray(aq.value) : null };
 }
 
-// ---------- 지도 ----------
-const map = L.map("map", { minZoom: 6, maxZoom: 13, zoomControl: true })
-  .setView([36.3, 127.8], 7);
-map.setMaxBounds([[32.0, 123.5], [39.5, 132.5]]);
-// OSM 공용 타일은 Referer 없는 요청(file:// 등)을 차단하고, CARTO는 API 키가 필요해서 Esri 타일을 사용
-L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
-  attribution: "Tiles © Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors",
-  maxZoom: 18,
-}).addTo(map);
+// ---------- 좌표 변환 (위경도 <-> 3D 월드) ----------
+const LON0 = 127.8, LAT0 = 36.0, S = 10;           // 중심점, 1도 = 10 유닛
+const COS = Math.cos((36.5 * Math.PI) / 180);
+const toXZ = (lat, lon) => ({ x: (lon - LON0) * COS * S, z: -(lat - LAT0) * S });
+const toLatLon = (x, z) => ({ lat: LAT0 - z / S, lon: x / (S * COS) + LON0 });
+const DEPTH = 0.5; // 지도 두께
 
-const legend = L.control({ position: "bottomleft" });
-legend.onAdd = () => {
-  const d = L.DomUtil.create("div", "legend");
-  d.innerHTML = "<b>미세먼지 등급</b><br>" +
-    [["#1e88e5", "좋음"], ["#2e9e5b", "보통"], ["#f59e0b", "나쁨"], ["#d32f2f", "매우나쁨"]]
-      .map(([c, t]) => `<i style="background:${c}"></i>${t}`).join("<br>");
-  return d;
-};
-legend.addTo(map);
+// ---------- three.js 장면 ----------
+const container = $("map");
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 500);
+camera.position.set(0, 58, 56);
 
-const markerLayer = L.layerGroup().addTo(map);
-let selectedMarker = null;
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+container.append(renderer.domElement);
 
-function pinIcon(city, temp, code, g) {
+const labelRenderer = new CSS2DRenderer();
+Object.assign(labelRenderer.domElement.style, { position: "absolute", inset: "0", pointerEvents: "none" });
+container.append(labelRenderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.46;
+controls.minDistance = 15;
+controls.maxDistance = 130;
+controls.target.set(0, 0, 4); // 제주까지 보이도록 약간 남쪽을 중심으로
+
+scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(-25, 50, 30);
+scene.add(sun);
+
+function resize() {
+  const w = container.clientWidth, h = container.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h);
+  labelRenderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(container);
+resize();
+
+// 시도 경계 -> 압출된 3D 지형
+const provinceMeshes = [];
+const PALETTE = [0xdfe8d6, 0xe9e4cf, 0xd6e3e8, 0xe6d9d9];
+
+async function buildProvinces() {
+  const geo = await (await fetch("korea.geojson")).json();
+  geo.features.forEach((f, idx) => {
+    const polys = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
+    const color = PALETTE[idx % PALETTE.length];
+    for (const poly of polys) {
+      const pts = (ring) => ring.map(([lon, lat]) => new THREE.Vector2((lon - LON0) * COS * S, (lat - LAT0) * S));
+      const shape = new THREE.Shape(pts(poly[0]));
+      poly.slice(1).forEach((h) => shape.holes.push(new THREE.Path(pts(h))));
+      const g = new THREE.ExtrudeGeometry(shape, { depth: DEPTH, bevelEnabled: false });
+      g.rotateX(-Math.PI / 2); // shape의 Y(북) -> -Z, 압출 방향 -> +Y(위)
+      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0 });
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.userData = { name: f.properties.name, base: color };
+      scene.add(mesh);
+      provinceMeshes.push(mesh);
+
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(g, 40),
+        new THREE.LineBasicMaterial({ color: 0x6b7c8f }),
+      );
+      scene.add(edges);
+    }
+  });
+}
+
+// ---------- 도시 막대(PM10 높이) + 날씨 라벨 ----------
+const cityGroup = new THREE.Group();
+scene.add(cityGroup);
+const barMeshes = [];
+
+function pinEl(city, temp, code) {
   const [icon] = wmo(code);
   const el = document.createElement("div");
-  el.className = `wx-pin g${g}`;
+  el.className = "wx-pin";
   el.textContent = `${icon} ${temp ?? "-"}°`;
   const small = document.createElement("small");
   small.textContent = city.ko;
   el.append(" ", small);
-  return L.divIcon({ className: "wx-marker", html: el.outerHTML, iconSize: [0, 0] });
+  el.addEventListener("click", () => select(city, { moveMap: false }));
+  return el;
 }
 
 async function refreshMarkers() {
   try {
     const { wx, aq } = await fetchAt(MAIN_CITIES, WX_CURRENT, "pm10,pm2_5");
-    markerLayer.clearLayers();
+    cityGroup.clear();
+    barMeshes.length = 0;
     MAIN_CITIES.forEach((city, i) => {
       const c = wx[i].current;
       const a = aq?.[i]?.current;
-      const g = a ? worst(grade("pm10", a.pm10), grade("pm25", a.pm2_5)) : 0;
-      L.marker([city.lat, city.lon], { icon: pinIcon(city, num(c.temperature_2m), c.weather_code, g), title: city.ko })
-        .on("click", () => select(city, { moveMap: false }))
-        .addTo(markerLayer);
+      const g = a ? Math.max(grade("pm10", a.pm10), grade("pm25", a.pm2_5)) : 0;
+      const h = a?.pm10 != null ? Math.min(Math.max(a.pm10 / 10, 0.6), 14) : 0.6; // PM10 10㎍/㎥ = 1유닛
+      const { x, z } = toXZ(city.lat, city.lon);
+
+      const bar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.45, 0.45, h, 20),
+        new THREE.MeshStandardMaterial({ color: GRADE_COLOR[g], roughness: 0.4 }),
+      );
+      bar.position.set(x, DEPTH + h / 2, z);
+      bar.userData.city = city;
+      cityGroup.add(bar);
+      barMeshes.push(bar);
+
+      const label = new CSS2DObject(pinEl(city, num(c.temperature_2m), c.weather_code));
+      label.position.set(x, DEPTH + h + 0.8, z);
+      cityGroup.add(label);
     });
   } catch (err) {
     console.warn("마커 갱신 실패:", err);
   }
 }
 
-// 지도 클릭 -> 가장 가까운 지역 이름 표시
+// ---------- 선택 표시(맥박 링) ----------
+const ring = new THREE.Mesh(
+  new THREE.TorusGeometry(0.9, 0.12, 12, 40),
+  new THREE.MeshBasicMaterial({ color: 0x1565c0 }),
+);
+ring.rotation.x = Math.PI / 2;
+ring.visible = false;
+scene.add(ring);
+
+// ---------- 카메라 이동 ----------
+let tween = null;
+function flyTo(x, z) {
+  tween = new THREE.Vector3(x, 0, z);
+}
+
+// ---------- 상호작용 ----------
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+function pick(ev, objects) {
+  const r = renderer.domElement.getBoundingClientRect();
+  pointer.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  return raycaster.intersectObjects(objects, false)[0];
+}
+
+let down = null;
+renderer.domElement.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY }; });
+renderer.domElement.addEventListener("pointerup", (e) => {
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return; // 드래그는 클릭이 아님
+  down = null;
+  const bar = pick(e, barMeshes);
+  if (bar) return select(bar.object.userData.city, { moveMap: false });
+  const hit = pick(e, provinceMeshes);
+  if (!hit) return;
+  const { lat, lon } = toLatLon(hit.point.x, hit.point.z);
+  const n = nearestRegion({ lat, lon });
+  select({
+    ko: "선택 지점", en: "", lat, lon,
+    sub: `${hit.object.userData.name} · ${lat.toFixed(3)}, ${lon.toFixed(3)} · 가까운 지역: ${n.name} (약 ${Math.round(n.km)}km)`,
+  }, { moveMap: false });
+});
+
+// 마우스 오버 시 시도 강조
+let hovered = null;
+renderer.domElement.addEventListener("pointermove", (e) => {
+  if (e.buttons) return;
+  const hit = pick(e, provinceMeshes);
+  const next = hit?.object ?? null;
+  if (next === hovered) return;
+  if (hovered) hovered.material.color.setHex(hovered.userData.base);
+  hovered = next;
+  if (hovered) hovered.material.color.setHex(0xbfdcff);
+  renderer.domElement.style.cursor = hovered ? "pointer" : "grab";
+});
+
 const rad = (d) => (d * Math.PI) / 180;
 function distKm(a, b) {
   const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
@@ -127,15 +273,6 @@ function nearestRegion(p) {
   }
   return { name: best[0], km: bd };
 }
-
-map.on("click", (e) => {
-  const p = { lat: e.latlng.lat, lon: e.latlng.lng };
-  const n = nearestRegion(p);
-  select({
-    ko: `선택 지점`, en: "", ...p,
-    sub: `${p.lat.toFixed(3)}, ${p.lon.toFixed(3)} · 가까운 지역: ${n.name} (약 ${Math.round(n.km)}km)`,
-  }, { moveMap: false });
-});
 
 // ---------- 상세 패널 ----------
 function setDust(kind, v) {
@@ -180,11 +317,10 @@ async function loadDetail() {
 
 function select(place, { moveMap = true } = {}) {
   current = place;
-  if (selectedMarker) selectedMarker.remove();
-  selectedMarker = L.circleMarker([place.lat, place.lon], {
-    radius: 9, color: "#1565c0", weight: 3, fillColor: "#fff", fillOpacity: 0.6,
-  }).addTo(map);
-  if (moveMap) map.flyTo([place.lat, place.lon], Math.max(map.getZoom(), 9), { duration: 0.8 });
+  const { x, z } = toXZ(place.lat, place.lon);
+  ring.position.set(x, DEPTH + 0.15, z);
+  ring.visible = true;
+  if (moveMap) flyTo(x, z);
   loadDetail();
 }
 
@@ -193,7 +329,6 @@ const input = $("search");
 const list = $("suggestions");
 let items = [], active = -1, searchSeq = 0;
 
-// 한글 접두사(1글자~) / 영문 접두사 / 한글 포함 순으로 로컬 사전 검색
 function searchLocal(q) {
   const kq = q.trim();
   const eq = kq.toLowerCase();
@@ -213,7 +348,6 @@ function searchLocal(q) {
     .map(({ r }) => ({ ko: r[0], en: r[1], lat: r[2], lon: r[3] }));
 }
 
-// 사전에 없는 지역: Open-Meteo 지오코딩 (한국 한정). 한글 결과가 없으면 영문명으로 재검색
 async function geocode(name) {
   const data = await getJson("https://geocoding-api.open-meteo.com/v1/search",
     { name, count: 8, language: "ko", countryCode: "KR" });
@@ -285,7 +419,7 @@ function choose(i) {
 input.addEventListener("input", onInput);
 input.addEventListener("focus", () => { input.select(); if (input.value) onInput(); });
 input.addEventListener("keydown", (e) => {
-  if (e.isComposing) return; // 한글 조합 중에는 무시
+  if (e.isComposing) return;
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     if (!items.length) return;
     e.preventDefault();
@@ -300,7 +434,22 @@ list.addEventListener("mousedown", (e) => {
 });
 document.addEventListener("click", (e) => { if (!e.target.closest(".search")) hideList(); });
 
+// ---------- 렌더 루프 ----------
+renderer.setAnimationLoop((t) => {
+  if (tween) {
+    const d = tween.clone().sub(controls.target).multiplyScalar(0.1);
+    controls.target.add(d);
+    camera.position.add(d);
+    if (d.length() < 0.01) tween = null;
+  }
+  if (ring.visible) ring.scale.setScalar(1 + 0.25 * Math.sin(t / 250));
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+});
+
 // ---------- 시작 ----------
+buildProvinces().catch((e) => console.error("지도 경계 로드 실패:", e));
 refreshMarkers();
 select(current, { moveMap: false });
-setInterval(() => { refreshMarkers(); loadDetail(); }, 10 * 60 * 1000); // 10분마다 갱신
+setInterval(() => { refreshMarkers(); loadDetail(); }, 10 * 60 * 1000);
