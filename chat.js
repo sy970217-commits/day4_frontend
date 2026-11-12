@@ -21,10 +21,31 @@ const exEl = document.getElementById("chat-examples");
 const history = []; // [{role: "user"|"assistant", content}]
 let busy = false;
 
-function addMsg(role, text, cls = "") {
+// AI 답변의 **굵게**와 "* 목록"만 안전하게 렌더링한다. HTML은 해석하지 않고 DOM 노드만 직접 만든다.
+function renderRich(el, text) {
+  el.textContent = "";
+  const lines = text.split("\n");
+  lines.forEach((line, i) => {
+    const m = line.match(/^\s*[*-]\s+(.*)$/);
+    const body = m ? `• ${m[1]}` : line;
+    for (const part of body.split(/(\*\*[^*]+\*\*)/g)) {
+      if (/^\*\*[^*]+\*\*$/.test(part)) {
+        const s = document.createElement("strong");
+        s.textContent = part.slice(2, -2);
+        el.append(s);
+      } else if (part) {
+        el.append(part);
+      }
+    }
+    if (i < lines.length - 1) el.append("\n");
+  });
+}
+
+function addMsg(role, text, cls = "", rich = false) {
   const el = document.createElement("div");
   el.className = `msg ${role} ${cls}`.trim();
-  el.textContent = text; // textContent: AI 응답을 HTML로 해석하지 않음
+  if (rich) renderRich(el, text);
+  else el.textContent = text; // textContent: AI 응답을 HTML로 해석하지 않음
   logEl.append(el);
   logEl.scrollTop = logEl.scrollHeight;
   return el;
@@ -65,7 +86,7 @@ async function ask(text) {
 
     pending.remove();
     addToolChips(data.toolCalls);
-    addMsg("bot", data.reply);
+    addMsg("bot", data.reply, "", true);
     history.push({ role: "assistant", content: data.reply });
     if (data.spots?.length) showSpots(data.spots); // find_spots 결과를 지도에 표시
   } catch (err) {
