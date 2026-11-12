@@ -230,6 +230,47 @@ async function photonSearch(place, category, kw, radiusKm) {
   }));
 }
 
+// ---------- 카카오 로컬 API (1순위) ----------
+// category -> 카카오 카테고리 그룹 코드(AT4 관광명소, CT1 문화시설, CE7 카페, FD6 음식점)
+// keyword가 없을 때 쓸 기본 검색어는 category 검색으로 처리하고, 공원·해변은 키워드 검색으로 처리한다.
+const KAKAO_CODE = { attraction: "AT4", nature: "AT4", beach: "AT4", museum: "CT1", indoor: "CT1", cafe: "CE7", restaurant: "FD6" };
+const KAKAO_DEFAULT_QUERY = { nature: "공원", beach: "해수욕장" }; // 이 카테고리는 키워드 검색 사용
+
+async function kakaoSearch(place, category, kw, radiusKm, limit) {
+  const key = process.env.KAKAO_REST_API_KEY;
+  const query = kw || KAKAO_DEFAULT_QUERY[category];
+  const params = new URLSearchParams({
+    x: String(place.lon), y: String(place.lat),
+    radius: String(Math.round(radiusKm * 1000)),
+    category_group_code: KAKAO_CODE[category],
+    size: String(Math.min(Math.max(limit * 2, 10), 15)), // 중복/이름 없는 항목을 거르고도 limit을 채우도록 여유분 요청
+    sort: query ? "accuracy" : "distance",
+  });
+  let url;
+  if (query) { params.set("query", query); url = "https://dapi.kakao.com/v2/local/search/keyword.json"; }
+  else { url = "https://dapi.kakao.com/v2/local/search/category.json"; }
+
+  let data;
+  try {
+    data = await getJson(`${url}?${params}`, { headers: { Authorization: `KakaoAK ${key}` } }, 8000);
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) {
+      e.message = `카카오 API 인증 실패(HTTP ${e.status}): REST API 키와 앱의 카카오맵(로컬) 사용 설정을 확인하세요`;
+    }
+    throw e;
+  }
+  return (data.documents ?? []).map((d, i) => ({
+    name: d.place_name,
+    lat: Number(d.y),
+    lon: Number(d.x),
+    score: 100 - i, // 카카오가 준 순서(정확도/거리)를 그대로 유지
+    address: d.road_address_name || d.address_name,
+    phone: d.phone || undefined,
+    url: d.place_url,
+    sub_category: d.category_name?.split(">").pop()?.trim(),
+  }));
+}
+
 async function findSpots(args) {
   const category = CATEGORY_FILTERS[args.category] ? args.category : "attraction";
   const place = await resolvePlace(args);
@@ -246,15 +287,26 @@ async function findSpots(args) {
   const query = `[out:json][timeout:15];(${CATEGORY_FILTERS[category]
     .map((f) => `nwr${around}${f}${nameFilter};`).join("")});out center tags 80;`;
 
-  let raw, source = "OpenStreetMap(Overpass)";
-  try {
-    raw = fromOverpass(await overpass(query));
-  } catch (e1) {
+  // 1순위: 카카오 로컬 API (KAKAO_REST_API_KEY가 있을 때). 실패하면 OpenStreetMap으로 대체
+  let raw, source = "Kakao Local API";
+  if (process.env.KAKAO_REST_API_KEY) {
     try {
-      raw = await photonSearch(place, category, kw, radiusKm);
-      source = "OpenStreetMap(Photon 대체 검색, 결과가 제한적일 수 있음)";
-    } catch (e2) {
-      return { error: `장소 검색 서버에 연결하지 못했습니다(${e2.message}). 잠시 후 다시 시도해 주세요.` };
+      raw = await kakaoSearch(place, category, kw, radiusKm, limit);
+    } catch (e) {
+      console.warn("kakao search failed:", e.message);
+    }
+  }
+  if (!raw) {
+    source = "OpenStreetMap(Overpass)";
+    try {
+      raw = fromOverpass(await overpass(query));
+    } catch (e1) {
+      try {
+        raw = await photonSearch(place, category, kw, radiusKm);
+        source = "OpenStreetMap(Photon 대체 검색, 결과가 제한적일 수 있음)";
+      } catch (e2) {
+        return { error: `장소 검색 서버에 연결하지 못했습니다(${e2.message}). 잠시 후 다시 시도해 주세요.` };
+      }
     }
   }
 
@@ -270,6 +322,10 @@ async function findSpots(args) {
       lat: +lat.toFixed(5),
       lon: +lon.toFixed(5),
       distance_km: +distKm(place.lat, place.lon, lat, lon).toFixed(1),
+      type: s.sub_category,
+      address: s.address,
+      phone: s.phone,
+      url: s.url,
       english_name: s.english_name,
       opening_hours: s.opening_hours,
       website: s.website,
