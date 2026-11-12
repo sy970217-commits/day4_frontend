@@ -1,0 +1,83 @@
+:root {
+  --good: #1e88e5; --normal: #2e9e5b; --bad: #f59e0b; --worst: #d32f2f; --none: #9aa7b4;
+  --sub: #6b7c8f; --line: #c5d3e0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh;
+  font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+  background: linear-gradient(160deg, #4facfe, #00c6fb);
+  color: #1f2d3d;
+}
+.app { max-width: 1100px; margin: 0 auto; padding: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: #fff; }
+h1 { margin: 0; font-size: 1.4rem; text-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
+
+.layout { display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start; }
+#map { height: 600px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, .2); background: #dbe9f6; }
+.card {
+  padding: 20px; border-radius: 16px; text-align: center;
+  background: rgba(255, 255, 255, .94); box-shadow: 0 10px 30px rgba(0, 0, 0, .2);
+}
+@media (max-width: 820px) {
+  .layout { grid-template-columns: 1fr; }
+  #map { height: 420px; }
+}
+
+/* 검색 + 자동완성 */
+.search { position: relative; width: min(100%, 320px); text-align: left; color: #1f2d3d; }
+.search input {
+  width: 100%; font: inherit; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line);
+}
+.search input:focus { outline: 2px solid #1e88e5; border-color: transparent; }
+.suggestions {
+  position: absolute; z-index: 1000; left: 0; right: 0; top: calc(100% + 4px);
+  margin: 0; padding: 4px; list-style: none; max-height: 260px; overflow-y: auto;
+  background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
+}
+.suggestions li { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+.suggestions li.active, .suggestions li[role=option]:hover { background: #e3f0fd; }
+.suggestions small { color: var(--sub); }
+.suggestions .empty { color: var(--sub); cursor: default; }
+
+/* 상세 패널 */
+.status { color: var(--sub); min-height: 1.4em; }
+.status.error { color: var(--worst); }
+.place { font-size: 1.15rem; font-weight: 600; }
+.sub { font-size: .8rem; color: var(--sub); min-height: 1.1em; }
+.icon { font-size: 4rem; line-height: 1.2; }
+.temp { font-size: 3rem; font-weight: 700; }
+.desc { font-size: 1.05rem; margin-bottom: 12px; }
+
+.dust { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.dust-item { border-radius: 12px; padding: 10px 6px; color: #fff; background: var(--none); display: flex; flex-direction: column; gap: 2px; }
+.dust-item span { font-size: .72rem; opacity: .95; }
+.dust-item b { font-size: 1.5rem; }
+.dust-item em { font-style: normal; font-size: .85rem; font-weight: 600; }
+.dust-item.g1 { background: var(--good); }
+.dust-item.g2 { background: var(--normal); }
+.dust-item.g3 { background: var(--bad); }
+.dust-item.g4 { background: var(--worst); }
+
+.details { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.details li { background: #eef4fa; border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+.details span { font-size: .8rem; color: var(--sub); }
+.updated { margin-top: 12px; font-size: .8rem; color: var(--sub); }
+.credit { margin: 14px 0 0; font-size: .75rem; color: #fff; text-align: center; }
+.credit a { color: #fff; }
+
+/* 지도 마커 */
+.wx-marker { background: none; border: none; }
+.wx-pin {
+  transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px 2px 5px; border-radius: 999px; background: #fff; white-space: nowrap;
+  font-size: .8rem; font-weight: 600; border: 3px solid var(--none);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .3); cursor: pointer;
+}
+.wx-pin.g1 { border-color: var(--good); }
+.wx-pin.g2 { border-color: var(--normal); }
+.wx-pin.g3 { border-color: var(--bad); }
+.wx-pin.g4 { border-color: var(--worst); }
+.wx-pin small { font-weight: 400; color: var(--sub); }
+.legend { background: rgba(255, 255, 255, .92); padding: 8px 10px; border-radius: 8px; font-size: .75rem; line-height: 1.6; box-shadow: 0 1px 5px rgba(0, 0, 0, .3); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>한국 날씨·미세먼지 지도</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>한국 날씨 · 미세먼지 지도</h1>
+      <div class="search">
+        <input id="search" type="text" placeholder="지역 검색 (예: 서, 부, 강릉, Busan)"
+               autocomplete="off" role="combobox" aria-expanded="false" aria-controls="suggestions" />
+        <ul id="suggestions" class="suggestions" role="listbox" hidden></ul>
+      </div>
+    </header>
+
+    <div class="layout">
+      <div id="map" aria-label="한국 지도"></div>
+
+      <aside class="card">
+        <section id="status" class="status" aria-live="polite">지도를 클릭하거나 지역을 검색하세요.</section>
+
+        <section id="weather" class="weather" hidden>
+          <div class="place" id="place"></div>
+          <div class="sub" id="sub"></div>
+          <div class="icon" id="icon"></div>
+          <div class="temp"><span id="temp">--</span>°C</div>
+          <div class="desc" id="desc">--</div>
+
+          <div class="dust">
+            <div class="dust-item" id="pm10-box"><span>미세먼지 PM10</span><b id="pm10">--</b><em id="pm10-grade">--</em></div>
+            <div class="dust-item" id="pm25-box"><span>초미세먼지 PM2.5</span><b id="pm25">--</b><em id="pm25-grade">--</em></div>
+          </div>
+
+          <ul class="details">
+            <li><span>체감온도</span><b id="feels">--</b></li>
+            <li><span>습도</span><b id="humidity">--</b></li>
+            <li><span>풍속</span><b id="wind">--</b></li>
+            <li><span>강수량</span><b id="precip">--</b></li>
+          </ul>
+          <div class="updated" id="updated"></div>
+        </section>
+      </aside>
+    </div>
+
+    <p class="credit">
+      날씨·대기질: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
+      (미세먼지는 CAMS 모델 기반 예측값이며 실측값과 다를 수 있습니다) ·
+      지도: Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>
+    </p>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="regions.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
