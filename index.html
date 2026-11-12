@@ -3,22 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>한국 날씨·미세먼지 3D 지도</title>
+  <title>한국 날씨·미세먼지 지도</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css" />
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "./vendor/three.module.js",
-      "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js",
-      "three/addons/renderers/CSS2DRenderer.js": "./vendor/CSS2DRenderer.js"
-    }
-  }
-  </script>
 </head>
 <body>
   <main class="app">
     <header>
-      <h1>한국 날씨 · 미세먼지 3D 지도</h1>
+      <h1>한국 날씨 · 미세먼지 지도</h1>
       <div class="search">
         <input id="search" type="text" placeholder="지역 검색 (예: 서, 부, 강릉, Busan)"
                autocomplete="off" role="combobox" aria-expanded="false" aria-controls="suggestions" />
@@ -27,18 +19,15 @@
     </header>
 
     <div class="layout">
-      <div class="map-wrap">
-        <div id="map" aria-label="한국 3D 지도"></div>
-        <div class="legend">
-          <b>미세먼지 등급</b>
-          <div><i style="background:#1e88e5"></i>좋음 <i style="background:#2e9e5b"></i>보통</div>
-          <div><i style="background:#f59e0b"></i>나쁨 <i style="background:#d32f2f"></i>매우나쁨</div>
-          <small>막대 높이 = PM10</small>
-        </div>
-        <div class="hint">드래그 회전 · 우클릭 이동 · 휠 확대</div>
-      </div>
+      <div id="map" aria-label="한국 지도"></div>
 
       <aside class="card">
+        <nav class="tabs" role="tablist">
+          <button type="button" role="tab" id="tabbtn-weather" aria-selected="true">날씨</button>
+          <button type="button" role="tab" id="tabbtn-chat" aria-selected="false">AI 추천</button>
+        </nav>
+
+        <div id="tab-weather">
         <section id="status" class="status" aria-live="polite">지도를 클릭하거나 지역을 검색하세요.</section>
 
         <section id="weather" class="weather" hidden>
@@ -61,25 +50,37 @@
           </ul>
           <div class="updated" id="updated"></div>
         </section>
+        </div>
+
+        <div id="tab-chat" class="chat" hidden>
+          <div id="chat-log" class="chat-log" aria-live="polite">
+            <div class="msg bot">안녕하세요! 날씨를 확인하고 어울리는 장소를 추천해 드려요. 아래 예시를 눌러 보세요.</div>
+          </div>
+          <div class="examples" id="chat-examples">
+            <button type="button">제주 지금 날씨 어때?</button>
+            <button type="button">내일 강릉 가려는데 뭐 하면 좋을까?</button>
+            <button type="button">비 오는 날 서울에서 갈 만한 실내 장소</button>
+            <button type="button">전주 맛집 추천해줘</button>
+          </div>
+          <form id="chat-form" class="chat-form" autocomplete="off">
+            <input id="chat-input" type="text" maxlength="500" placeholder="무엇이든 물어보세요" />
+            <button type="submit" id="chat-send">전송</button>
+          </form>
+        </div>
       </aside>
     </div>
 
     <p class="credit">
       날씨·대기질: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
       (미세먼지는 CAMS 모델 기반 예측값이며 실측값과 다를 수 있습니다) ·
-      행정구역: <a href="https://github.com/southkorea/southkorea-maps" target="_blank" rel="noopener">southkorea-maps</a> (통계청 2013) ·
-      3D: <a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a>
+      지도: Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a> ·
+      장소: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors ·
+      AI: Google Gemini
     </p>
   </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="regions.js"></script>
-  <script type="module">
-    // 모듈 로딩 자체가 실패해도 이유를 화면에 보여준다
-    import("./app.js").catch((e) => {
-      console.error(e);
-      const s = document.getElementById("status");
-      s.className = "status error";
-      s.textContent = `앱을 불러오지 못했습니다: ${e.message}`;
-    });
-  </script>
+  <script src="app.js"></script>
+  <script src="chat.js"></script>
 </body>
 </html>

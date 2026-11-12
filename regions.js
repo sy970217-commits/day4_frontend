@@ -65,3 +65,6 @@ const REGIONS = [
   ["남해", "Namhae", 34.8377, 127.8924], ["하동", "Hadong", 35.0672, 127.7514],
   ["함양", "Hamyang", 35.5205, 127.7252],
 ];
+
+// 서버리스 함수(api/_lib/tools.js)에서도 같은 사전을 사용한다
+if (typeof module !== "undefined") module.exports = REGIONS;
