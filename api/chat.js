@@ -17,7 +17,7 @@ const SYSTEM = `너는 한국 여행·나들이 추천 어시스턴트다. 두 �
 2. 장소·코스·맛집 추천 질문에는 먼저 get_weather로 날씨를 확인하고, 그 조건에 맞는 category로 find_spots를 호출한다.
    (예: 비·눈·미세먼지 나쁨 -> indoor/museum/cafe, 맑고 미세먼지 좋음 -> attraction/nature/beach)
    사용자가 장소 종류를 말하지 않았더라도 되묻지 말고, 날씨에 맞춰 네가 category를 직접 골라 곧바로 find_spots를 호출한다.
-   필요하면 서로 다른 category로 find_spots를 두 번 호출해 다양하게 추천한다. 되묻기는 지역을 전혀 알 수 없을 때만 한다.
+   find_spots는 한 번의 답변에서 최대 2번까지만 호출한다(서로 다른 category 2개까지 가능). 되묻기는 지역을 전혀 알 수 없을 때만 한다.
 3. 도구가 필요 없는 일반 대화에는 도구를 호출하지 않는다.
 4. 장소 이름은 반드시 find_spots 결과에 있는 것만 추천한다. 결과에 없는 장소를 지어내지 않는다.
 5. 도구가 error를 반환하면 사실대로 알리고, 가능하면 지역명이나 조건을 바꿔 한 번 더 시도한다.
@@ -35,7 +35,18 @@ function limited(ip) {
   return arr.length > 20;
 }
 
+// Gemini 일시 과부하(503)는 잠깐 뒤 한 번 재시도한다. 429(한도 초과)는 재시도해도 소용없어 그대로 알린다.
 async function callGemini(apiKey, contents, allowTools) {
+  try {
+    return await callGeminiOnce(apiKey, contents, allowTools);
+  } catch (e) {
+    if (e.status !== 503) throw e;
+    await new Promise((r) => setTimeout(r, 1500));
+    return callGeminiOnce(apiKey, contents, allowTools);
+  }
+}
+
+async function callGeminiOnce(apiKey, contents, allowTools) {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
@@ -60,7 +71,8 @@ async function callGemini(apiKey, contents, allowTools) {
 
 function friendlyError(e) {
   if (e.name === "TimeoutError") return "응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.";
-  if (e.status === 429) return "Gemini API 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.";
+  if (e.status === 429) return "Gemini API 요청 한도를 초과했습니다(무료 키는 분당 요청 수가 적습니다). 1분 정도 뒤에 다시 시도해 주세요.";
+  if (e.status === 503) return "Gemini 서버가 일시적으로 혼잡합니다. 잠시 후 다시 시도해 주세요.";
   if (e.status === 400 && /API key/i.test(e.message)) return "Gemini API 키가 올바르지 않습니다. Vercel 환경변수 GEMINI_API_KEY를 확인하세요.";
   if (e.status === 404) return `Gemini 모델(${MODEL})을 찾을 수 없습니다. 환경변수 GEMINI_MODEL을 확인하세요.`;
   return `AI 호출 중 오류가 발생했습니다: ${e.message}`;
