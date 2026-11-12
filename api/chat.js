@@ -139,6 +139,7 @@ module.exports = async (req, res) => {
     return res.status(200).json({ reply: "답변을 완성하지 못했습니다. 다시 시도해 주세요.", toolCalls, spots });
   } catch (e) {
     console.error("chat error:", e.message);
-    return res.status(502).json({ error: friendlyError(e) });
+    // detail: Gemini가 돌려준 원문 사유(키·개인정보 없음). 한도가 분당인지 일일인지 구분하는 데 쓴다.
+    return res.status(502).json({ error: friendlyError(e), detail: String(e.message).slice(0, 400) });
   }
 };
