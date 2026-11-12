@@ -115,7 +115,11 @@ module.exports = async (req, res) => {
         const { name, args } = p.functionCall;
         toolCalls.push({ name, args: args ?? {} });
         const result = await runTool(name, args);
-        if (name === "find_spots" && Array.isArray(result.spots) && result.spots.length) spots = result.spots;
+        // 여러 번 호출한 find_spots 결과를 누적(이름 중복 제거, 최대 12곳)해 지도에 모두 표시
+        if (name === "find_spots" && Array.isArray(result.spots)) {
+          const names = new Set(spots.map((s) => s.name));
+          spots = [...spots, ...result.spots.filter((s) => !names.has(s.name))].slice(0, 12);
+        }
         return { functionResponse: { name, response: { result } } };
       }));
       contents.push({ role: "user", parts: results });

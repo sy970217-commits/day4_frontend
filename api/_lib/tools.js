@@ -170,13 +170,22 @@ function distKm(aLat, aLon, bLat, bLon) {
   return 12742 * Math.asin(Math.sqrt(h));
 }
 
+// Overpass가 응답하지 않으면 5분간 건너뛰고(서킷 브레이커) 곧바로 Photon을 쓴다.
+// 서버리스 인스턴스가 살아 있는 동안만 유지되며, 매 호출마다 시간 초과를 기다리는 낭비를 막는다.
+let overpassDownUntil = 0;
 async function overpass(query) {
+  if (Date.now() < overpassDownUntil) throw new Error("overpass skipped (recently unavailable)");
   const body = new URLSearchParams({ data: query }).toString();
-  return Promise.any(OVERPASS.map((url) => getJson(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  }, 12000)));
+  try {
+    return await Promise.any(OVERPASS.map((url) => getJson(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    }, 5000)));
+  } catch (e) {
+    overpassDownUntil = Date.now() + 5 * 60 * 1000;
+    throw e;
+  }
 }
 
 // Overpass 응답 -> 공통 형식
